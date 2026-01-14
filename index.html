@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>無風扇系統表面溫度計算</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-blue: #00d2ff;
+            --neon-orange: #ff9d00;
+            --panel-bg: #1e2227;
+            --border-color: #3e4451;
+        }
+        body {
+            background-color: #0f1114;
+            background-image: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                              linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 4px, 3px 100%;
+            color: #f1f5f9;
+            font-family: 'JetBrains Mono', 'Segoe UI', monospace;
+            overflow-x: hidden;
+        }
+        .industrial-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+        .industrial-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+        }
+        .input-dark {
+            background: #111418;
+            border: 1px solid #4b5563;
+            color: var(--neon-blue);
+            text-shadow: 0 0 5px rgba(0, 210, 255, 0.5);
+            transition: all 0.2s ease;
+        }
+        .input-dark:focus {
+            border-color: var(--neon-blue);
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
+            outline: none;
+        }
+        .input-with-unit {
+            padding-right: 5.5rem !important; 
+        }
+        .unit-label {
+            right: 1rem;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+        .label-style {
+            color: #9ca3af;
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+        }
+        .label-style::before {
+            content: ">>";
+            margin-right: 5px;
+            color: var(--neon-blue);
+            font-size: 0.6rem;
+        }
+        .panel-header {
+            background: #2d333b;
+            padding: 2px 15px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: #ffffff;
+            border-bottom: 2px solid var(--neon-blue);
+            text-transform: uppercase;
+        }
+        .glow-text {
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+        }
+        .lcd-number {
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: -0.05em;
+        }
+        .corner-deco {
+            position: absolute;
+            width: 10px; height: 10px;
+            border: 2px solid var(--neon-blue);
+        }
+        .top-left { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+        .bottom-right { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+        
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+        .scanline {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100px;
+            background: linear-gradient(to bottom, transparent, rgba(0, 210, 255, 0.03), transparent);
+            animation: scanline 8s linear infinite;
+            pointer-events: none;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-10">
+    <div class="scanline"></div>
+    
+    <div class="max-w-6xl mx-auto relative">
+        <div class="flex justify-between items-center mb-6 px-2">
+            <div class="h-1 w-1/4 bg-gradient-to-r from-cyan-500 to-transparent"></div>
+            <div class="text-[10px] text-cyan-500 font-bold tracking-[0.3em]"></div>
+            <div class="h-1 w-1/4 bg-gradient-to-l from-cyan-500 to-transparent"></div>
+        </div>
+
+        <header class="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+            <div class="relative pl-6 border-l-4 border-cyan-500">
+                <h1 class="text-3xl font-black text-white tracking-tight glow-text uppercase"><span class="text-cyan-500">無風扇系統表面溫度計算 V2.7</span></h1>
+                <p class="text-gray-400 text-xs mt-1 font-medium tracking-wider">提供無風扇系統快速計算表面溫度需求</p>
+            </div>
+            <div class="bg-[#111418] border border-gray-700 p-2 px-4 rounded shadow-inner">
+                <div class="flex items-center gap-3">
+                    <div class="flex flex-col">
+                        <span class="text-[9px] text-gray-500 font-bold uppercase">System Status</span>
+                        <span class="text-[11px] text-green-400 font-bold tracking-widest uppercase animate-pulse">● Operational</span>
+                    </div>
+                    <div class="w-[1px] h-8 bg-gray-700 mx-2"></div>
+                    <div class="flex flex-col">
+                        <span class="text-[9px] text-gray-400 font-bold uppercase">Unit Mode</span>
+                        <span class="text-[11px] text-white font-bold uppercase">Metric (mm)</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-4 space-y-6">
+                <div class="industrial-card rounded-sm">
+                    <div class="panel-header flex justify-between items-center">
+                        <span>Config_Inputs</span>
+                        <span class="text-[9px] opacity-50">#0422-TX</span>
+                    </div>
+                    <div class="p-6 space-y-5">
+                        <div class="group">
+                            <label class="label-style mb-2">Total System Power [P]</label>
+                            <div class="relative">
+                                <input type="number" id="power" value="15" step="0.1" class="input-dark input-with-unit w-full p-3 pl-4 rounded-sm text-lg" oninput="calculate()">
+                                <span class="absolute unit-label top-4 text-gray-500 text-xs font-bold">W</span>
+                            </div>
+                        </div>
+                        
+                        <div class="group">
+                            <label class="label-style mb-2">Ambient Temp [Ta]</label>
+                            <div class="relative">
+                                <input type="number" id="ambient" value="25" step="1" class="input-dark input-with-unit w-full p-3 pl-4 rounded-sm text-lg" oninput="calculate()">
+                                <span class="absolute unit-label top-4 text-gray-500 text-xs font-bold">°C</span>
+                            </div>
+                        </div>
+
+                        <div class="py-4 border-y border-gray-800">
+                            <label class="label-style mb-3">Enclosure Dimensions [mm]</label>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div class="space-y-1">
+                                    <input type="number" id="dimL" value="200" class="input-dark w-full p-2 text-center rounded-sm text-sm" oninput="calculate()">
+                                    <span class="text-[9px] text-gray-500 block text-center uppercase font-bold tracking-tighter italic">Length</span>
+                                </div>
+                                <div class="space-y-1">
+                                    <input type="number" id="dimW" value="150" class="input-dark w-full p-2 text-center rounded-sm text-sm" oninput="calculate()">
+                                    <span class="text-[9px] text-gray-500 block text-center uppercase font-bold tracking-tighter italic">Width</span>
+                                </div>
+                                <div class="space-y-1">
+                                    <input type="number" id="dimH" value="50" class="input-dark w-full p-2 text-center rounded-sm text-sm" oninput="calculate()">
+                                    <span class="text-[9px] text-gray-500 block text-center uppercase font-bold tracking-tighter italic">Height</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="label-style mb-2">Convection Coeff [h]</label>
+                            <div class="relative">
+                                <input type="number" id="hValue" value="8" step="0.1" class="input-dark input-with-unit w-full p-3 pl-4 rounded-sm border-l-4 border-yellow-500" oninput="calculate()">
+                                <span class="absolute unit-label top-4 text-gray-500 text-[10px] font-bold">W/m²K</span>
+                            </div>
+                            <div class="mt-3">
+                                <button onclick="setH(8)" class="w-full text-[10px] bg-[#2d333b] hover:bg-cyan-900 border border-gray-700 py-2 rounded-sm transition-all font-bold uppercase tracking-wider">重設為標準對流 (8)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8 space-y-6">
+                <div class="industrial-card rounded-sm min-h-[320px]">
+                    <div class="top-left corner-deco"></div>
+                    <div class="bottom-right corner-deco"></div>
+                    <div class="panel-header">Real-time_Analysis_Data</div>
+                    
+                    <div class="p-8 grid grid-cols-1 md:grid-cols-5 gap-8">
+                        <div class="md:col-span-3 flex flex-col justify-center items-center bg-[#111418] border border-gray-800 rounded-sm p-6 relative">
+                            <div class="absolute top-2 left-3 text-[9px] text-gray-600 font-bold uppercase tracking-widest">Est. Surface Temp</div>
+                            <div class="flex items-baseline">
+                                <span id="resultTemp" class="text-8xl font-black text-white lcd-number tracking-tighter glow-text">--</span>
+                                <span class="text-3xl ml-2 text-cyan-500 font-bold">°C</span>
+                            </div>
+                            
+                            <div id="safetyWarning" class="mt-6 w-full py-2 px-4 rounded-sm text-[11px] font-black text-center uppercase tracking-[0.2em] hidden transition-all duration-300">
+                                --
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2 flex flex-col justify-center space-y-6">
+                            <div class="relative pl-4 border-l-2 border-gray-700">
+                                <span class="label-style mb-1 text-cyan-400">Total Area [A]</span>
+                                <div class="text-2xl font-bold text-white"><span id="resArea" class="lcd-number">--</span> <span class="text-xs text-gray-500 font-medium">mm²</span></div>
+                            </div>
+                            <div class="relative pl-4 border-l-2 border-gray-700">
+                                <span class="label-style mb-1 text-orange-400">Temp Delta [ΔT]</span>
+                                <div class="text-2xl font-bold text-white">+<span id="resDelta" class="lcd-number">--</span> <span class="text-xs text-gray-500 font-medium">°C</span></div>
+                            </div>
+                            <div class="relative pl-4 border-l-2 border-gray-700">
+                                <span class="label-style mb-1 text-purple-400">Resis. [Rca]</span>
+                                <div class="text-2xl font-bold text-white"><span id="resResistance" class="lcd-number">--</span> <span class="text-xs text-gray-500 font-medium">°C/W</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="industrial-card rounded-sm p-5 bg-[#1a1d21]">
+                        <div class="text-[11px] font-bold text-cyan-500 uppercase mb-3 flex items-center">
+                            <span class="mr-2">■</span> Calculation Logic
+                        </div>
+                        <div class="space-y-3">
+                            <code class="block bg-black p-3 rounded-sm text-green-400 text-xs border border-gray-800 font-bold">
+                                Ts = Ta + P / (h * A)
+                            </code>
+                            <p class="text-[11px] text-gray-400 leading-relaxed">
+                                此模型假設熱量均勻散佈於外殼六面。
+                            </p>
+                        </div>
+                    </div>
+                    <div class="industrial-card rounded-sm p-5 bg-[#1a1d21]">
+                        <div class="text-[11px] font-bold text-yellow-500 uppercase mb-3 flex items-center">
+                            <span class="mr-2">■</span> Engineering Notes
+                        </div>
+                        <ul class="text-[11px] text-gray-400 space-y-2">
+                            <li class="flex items-start"><span class="mr-2 text-yellow-500">▶</span> 注意局部熱點通常比均溫Tcase高出 10~20%。</li>
+                            <li class="flex items-start"><span class="mr-2 text-yellow-500">▶</span> [h] 係數隨環境氣流流速與設計細節變動。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-12 pt-4 border-t border-gray-800 flex justify-between items-center text-gray-600 text-[10px] font-bold tracking-[0.2em] uppercase">
+            <div>Created by Randy Chen</div>
+            <div>Ref Code: 2025-DFT-PRO</div>
+            <div>© Confidential Simulation Tool</div>
+        </footer>
+    </div>
+
+    <script>
+        // 阻擋右鍵選單
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        }, false);
+
+        function setH(val) {
+            document.getElementById('hValue').value = val;
+            calculate();
+        }
+
+        function calculate() {
+            const p = parseFloat(document.getElementById('power').value) || 0;
+            const ta = parseFloat(document.getElementById('ambient').value) || 0;
+            const l_mm = parseFloat(document.getElementById('dimL').value) || 0;
+            const w_mm = parseFloat(document.getElementById('dimW').value) || 0;
+            const h_dim_mm = parseFloat(document.getElementById('dimH').value) || 0;
+            const h_coeff = parseFloat(document.getElementById('hValue').value) || 0;
+
+            const area_mm2 = 2 * (l_mm * w_mm + l_mm * h_dim_mm + w_mm * h_dim_mm);
+            const area_m2 = area_mm2 / 1000000;
+            
+            if (area_m2 <= 0 || h_coeff <= 0) {
+                updateUI("--", "--", "--", "--");
+                document.getElementById('safetyWarning').classList.add('hidden');
+                return;
+            }
+
+            const deltaT = p / (h_coeff * area_m2);
+            const ts = ta + deltaT;
+            const resistance = deltaT / p;
+
+            updateUI(
+                ts.toFixed(1), 
+                Math.round(area_mm2).toLocaleString(), 
+                deltaT.toFixed(1), 
+                (p > 0 ? resistance.toFixed(2) : "0")
+            );
+
+            handleWarning(ts);
+        }
+
+        function updateUI(ts, area, dt, r) {
+            document.getElementById('resultTemp').innerText = ts;
+            document.getElementById('resArea').innerText = area;
+            document.getElementById('resDelta').innerText = dt;
+            document.getElementById('resResistance').innerText = r;
+        }
+
+        function handleWarning(ts) {
+            const warningBox = document.getElementById('safetyWarning');
+            warningBox.classList.add('hidden');
+            
+            if (ts > 60) {
+                warningBox.classList.remove('hidden');
+                warningBox.className = "mt-6 w-full py-2 px-4 rounded-sm text-[11px] font-black text-center uppercase tracking-[0.2em] bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-red-400";
+                warningBox.innerHTML = "!! Critical System Overheat !!";
+            } else if (ts > 45) {
+                warningBox.classList.remove('hidden');
+                warningBox.className = "mt-6 w-full py-2 px-4 rounded-sm text-[11px] font-black text-center uppercase tracking-[0.2em] bg-yellow-500 text-black shadow-[0_0_15px_rgba(234,179,8,0.3)] border border-yellow-300";
+                warningBox.innerHTML = "!! Thermal Caution Level High !!";
+            }
+        }
+
+        window.onload = calculate;
+    </script>
+</body>
+</html>
